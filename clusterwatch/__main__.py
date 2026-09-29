@@ -49,10 +49,14 @@ def cmd_run(args, cfg) -> int:
         if args.dry_run:
             log.info("--dry-run : pas d'envoi Telegram")
         else:
-            from .notify.telegram import send_text
+            from .notify.telegram import TelegramError, send_text
 
-            send_text(text)
-            log.info("rapport envoyé sur Telegram")
+            try:
+                n = send_text(text)
+                log.info("rapport envoyé sur Telegram (%d message(s))", n)
+            except TelegramError as exc:
+                log.error("%s", exc)
+                return 1
     return 0
 
 
