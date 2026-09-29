@@ -28,6 +28,7 @@ class ApiConfig:
     max_retries: int = 6
     page_limit: int = 200
     candidate_max_pages: int = 10
+    max_candidates_per_run: int = 15
     cache_dir: str = "cache"
 
 
@@ -162,6 +163,7 @@ def parse_config(raw: dict) -> Config:
         max_retries=int(a.get("max_retries", ApiConfig.max_retries)),
         page_limit=int(a.get("page_limit", ApiConfig.page_limit)),
         candidate_max_pages=int(a.get("candidate_max_pages", ApiConfig.candidate_max_pages)),
+        max_candidates_per_run=int(a.get("max_candidates_per_run", ApiConfig.max_candidates_per_run)),
         cache_dir=str(a.get("cache_dir", ApiConfig.cache_dir)),
     )
 

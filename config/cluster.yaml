@@ -47,6 +47,9 @@ api:
   page_limit: 200
   # Nombre max de pages lues pour l'historique d'un candidat (empreinte).
   candidate_max_pages: 10
+  # Nombre max de candidats dont l'empreinte est calculée par passage
+  # (les suivants sont traités aux passages suivants).
+  max_candidates_per_run: 15
   cache_dir: cache
 
 collection:

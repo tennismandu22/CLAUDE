@@ -101,7 +101,7 @@ def compute_fingerprint(address: str, trades: list[Trade], ref: FingerprintRef) 
     imbalance = abs(buy_tao - sell_tao) / top * 100 if top > 0 else None
     fp.criteria.append(Criterion(
         "balance", "Équilibre achats/ventes",
-        f"achats {_fmt(buy_tao)} / ventes {_fmt(sell_tao)} TAO (écart {_fmt(imbalance)} %)",
+        f"achats {_fmt(buy_tao)} / ventes {_fmt(sell_tao)} TAO (écart {_fmt(imbalance, unit=' %')})",
         f"écart ≤ {_fmt(ref.buy_sell_balance_tolerance_pct)} %",
         None if imbalance is None else imbalance <= ref.buy_sell_balance_tolerance_pct,
     ))
@@ -122,7 +122,7 @@ def compute_fingerprint(address: str, trades: list[Trade], ref: FingerprintRef) 
         ok = bool(_in(s_med, ref.slippage_median_pct)) and s_p90 < ref.slippage_p90_max_pct
     fp.criteria.append(Criterion(
         "slippage", "Slippage",
-        f"médian {_fmt(s_med)} %, P90 {_fmt(s_p90)} %",
+        f"médian {_fmt(s_med, unit=' %')}, P90 {_fmt(s_p90, unit=' %')}",
         f"médian {_fmt(ref.slippage_median_pct[0])}–{_fmt(ref.slippage_median_pct[1])} %, "
         f"P90 < {_fmt(ref.slippage_p90_max_pct)} %",
         ok,
@@ -164,7 +164,7 @@ def compute_fingerprint(address: str, trades: list[Trade], ref: FingerprintRef) 
     share = ref_tao / buy_tao * 100 if buy_tao > 0 else None
     fp.criteria.append(Criterion(
         "validator", "Validateur de référence (informatif)",
-        f"{_fmt(share, 0)} % des achats",
+        f"{_fmt(share, 0, ' %')} des achats",
         ", ".join(ref.reference_validator_names) or "—",
         None if share is None else share > 0,
         informative=True,
