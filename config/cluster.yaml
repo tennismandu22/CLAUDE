@@ -1,0 +1,89 @@
+# Périmètre et paramètres de clusterwatch.
+# Ce fichier se modifie sans toucher au code : ajouter/retirer un wallet,
+# changer un seuil ou une borne d'empreinte suffit.
+
+wallets:
+  rang1:
+    - 5Et1cWpHVPdpaiTFjvmEdw4BVt4tTmwzPJ9TUFmEJvrWH3qR
+    - 5DkW8hSjpJNkwiNA1EXyjhnqGUAGqAgP3SXHh36szUpmea2W
+    - 5Dhq343bWqmgYMw3uAcWpjLxMyTmdF3BNouqpr4g9J4CYtBA
+    - 5G2ZUzcazJ831HzpsmdMoqV811GYXhdZmJJ7MAbrQE33iQLc
+    - 5GULjuRpF34khB67a3cb7G1kzhgpu8h6VZu6vMDod4APKbSU
+    - 5GL46po3iBatb3uyWabqy7tUeKK6Wu8HFmu4rj1z2Pmu7VbV
+  rang2:
+    - 5CfLkfxDuGibLtDZzyNApkhjptDmvKbbJvu5RZgbLiFd5vhE
+    - 5DTzNCjrVwJGRhRf1oGJWgVHEcAzkjfEgoTMqiD57HjucFLP
+    - 5HihiJi6XbPhnPBKGwHMYwNnCNjXZnvQ64VTqdY4tLvUmKAq
+    - 5GCLehX9rfmbWsZZrCsXR3bLCdwTs7DzXrLSXhq2C7HT4gCp
+  observation:
+    - 5DwEDbBakwhsWJCptbwnVzeG1Mh1VvSQPNudS97E6JJs9qxT
+
+# Adresses de dépôt exchange : tuyaux surveillés, PAS des wallets du trader.
+deposit_addresses:
+  - 5GunvcaiSh7eKEUym6PZMujByyN22kfTQ3RaWfqt52FbCfxb
+  - 5DjuLMBvT6grSwvXVshBepappmSZ8Ses9NZTYhGggcgXpZcG
+
+# Infrastructure ignorée comme contrepartie (jamais candidate).
+# role "fee_collector" : les micro-transferts vers cette adresse sont masqués.
+infrastructure:
+  - address: 5FqBL928choLPmeFz5UVAvonBD5k7K2mZSXVC9RkFzLxoy2s
+    label: hot wallet exchange
+    role: exchange
+  - address: 5DceuTr7XPqw67PNHW9ewzzo2cZ7Cm8HgfjwUqEpd8Mh8QNg
+    label: collecteur de frais
+    role: fee_collector
+  - address: 5FqqXKb9zonSNKbZhEuHYjCXnmPbX9tdzMCU2gx8gir8Z8a5
+    label: gros wallet d'échange
+    role: exchange
+  - address: 5HatKeWR5rhibiScq7juwcTV8anEevHUAJYFgoPmYgpkDv1c
+    label: tiers
+    role: third_party
+
+api:
+  base_url: https://api.taostats.io
+  # Pause minimale entre deux appels (secondes). 12 s ≈ 5 appels/min (offre gratuite).
+  min_interval_s: 12
+  max_retries: 6
+  page_limit: 200
+  # Nombre max de pages lues pour l'historique d'un candidat (empreinte).
+  candidate_max_pages: 10
+  cache_dir: cache
+
+collection:
+  # Bloc de départ du tout premier passage. null = tout l'historique.
+  start_block: null
+
+thresholds:
+  big_trade_tao: 5.0
+  micro_fee_tao: 0.01
+  watch_subnets: [118]
+  # Un wallet dont la valeur est sous ce seuil est considéré « vidé ».
+  emptied_wallet_tao: 0.1
+  # Changement de validateur : paire vente/achat même wallet, même subnet,
+  # à au plus N blocs d'écart, prix identique (tolérance relative), slippage nul.
+  validator_move_block_window: 5
+  validator_move_price_tolerance: 0.0001
+  validator_move_slippage_max: 0.0
+
+# Empreinte de référence du trader. Pourcentages exprimés en % (0.09 = 0,09 %).
+fingerprint:
+  min_trades: 15
+  buy_sell_balance_tolerance_pct: 1.0
+  clip_median_tao: [4, 26]
+  slippage_median_pct: [0.09, 0.31]
+  slippage_p90_max_pct: 0.85
+  subnets_touched: [12, 130]
+  holding_median_days: [0.4, 4]
+  quiet_hours_utc: [1, 2, 3, 4, 5]          # creux 01h–06h
+  peak_hours_utc: [7, 8, 9, 10, 11, 12, 20, 21]  # pics 07h–13h et 20h–22h
+  quiet_share_max: 0.08   # part max des trades dans le creux
+  peak_share_min: 0.55    # part min des trades dans les pics
+  # Critères (hors validateur) qui doivent être vérifiés pour une empreinte « cohérente ».
+  min_criteria_ok: 5
+  # Validateur historique (marqueur informatif, jamais éliminatoire).
+  reference_validator_names: [taostats]
+  reference_validator_hotkeys:
+    - 5GKH9FPPnWSUoeeTJp19wVtd84XqFW4pyK2ijV2GsFbhTrP1  # Taostats, à vérifier via `probe`
+
+telegram:
+  enabled: false
