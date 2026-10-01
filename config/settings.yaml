@@ -1,29 +1,9 @@
-# Périmètre et paramètres de clusterwatch.
-# Ce fichier se modifie sans toucher au code : ajouter/retirer un wallet,
-# changer un seuil ou une borne d'empreinte suffit.
+# Réglages communs à tous les groupes suivis.
+# Les groupes (wallets, adresses de dépôt) sont dans config/groups/<nom>.yaml.
+# Un fichier de groupe peut redéfinir thresholds, fingerprint ou auto_add pour lui seul.
 
-wallets:
-  rang1:
-    - 5Et1cWpHVPdpaiTFjvmEdw4BVt4tTmwzPJ9TUFmEJvrWH3qR
-    - 5DkW8hSjpJNkwiNA1EXyjhnqGUAGqAgP3SXHh36szUpmea2W
-    - 5Dhq343bWqmgYMw3uAcWpjLxMyTmdF3BNouqpr4g9J4CYtBA
-    - 5G2ZUzcazJ831HzpsmdMoqV811GYXhdZmJJ7MAbrQE33iQLc
-    - 5GULjuRpF34khB67a3cb7G1kzhgpu8h6VZu6vMDod4APKbSU
-    - 5GL46po3iBatb3uyWabqy7tUeKK6Wu8HFmu4rj1z2Pmu7VbV
-  rang2:
-    - 5CfLkfxDuGibLtDZzyNApkhjptDmvKbbJvu5RZgbLiFd5vhE
-    - 5DTzNCjrVwJGRhRf1oGJWgVHEcAzkjfEgoTMqiD57HjucFLP
-    - 5HihiJi6XbPhnPBKGwHMYwNnCNjXZnvQ64VTqdY4tLvUmKAq
-    - 5GCLehX9rfmbWsZZrCsXR3bLCdwTs7DzXrLSXhq2C7HT4gCp
-  observation:
-    - 5DwEDbBakwhsWJCptbwnVzeG1Mh1VvSQPNudS97E6JJs9qxT
-
-# Adresses de dépôt exchange : tuyaux surveillés, PAS des wallets du trader.
-deposit_addresses:
-  - 5GunvcaiSh7eKEUym6PZMujByyN22kfTQ3RaWfqt52FbCfxb
-  - 5DjuLMBvT6grSwvXVshBepappmSZ8Ses9NZTYhGggcgXpZcG
-
-# Infrastructure ignorée comme contrepartie (jamais candidate).
+# Infrastructure ignorée comme contrepartie (jamais candidate), pour tous les groupes.
+# Un groupe peut ajouter la sienne dans son propre fichier.
 # role "fee_collector" : les micro-transferts vers cette adresse sont masqués.
 infrastructure:
   - address: 5FqBL928choLPmeFz5UVAvonBD5k7K2mZSXVC9RkFzLxoy2s
@@ -87,6 +67,14 @@ fingerprint:
   reference_validator_names: [taostats]
   reference_validator_hotkeys:
     - 5GKH9FPPnWSUoeeTJp19wVtd84XqFW4pyK2ijV2GsFbhTrP1  # Taostats, à vérifier via `probe`
+
+# Ajout automatique au suivi des wallets liés de confiance « forte »
+# (transfert de stake ou flux dans les deux sens, et au moins 15 trades).
+# Ils sont rangés en « ajout auto » dans l'état du groupe ; `remove` les retire
+# et empêche qu'ils soient ré-ajoutés.
+auto_add:
+  enabled: true
+  max_per_run: 3
 
 telegram:
   enabled: false

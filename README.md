@@ -1,9 +1,14 @@
 # clusterwatch
 
-Outil Python d'analyse et de surveillance d'un cluster de wallets Bittensor (dTAO).
+Outil Python d'analyse et de surveillance de groupes de wallets Bittensor (dTAO).
+Un **groupe** rassemble les wallets d'une même entité (le trader suivi, ton propre
+portefeuille, un autre acteur…). Chaque groupe a ses propres wallets, son état, son PnL
+et ses rapports.
+
 Chaque passage relit la chaîne via l'API officielle Taostats depuis le dernier bloc
 analysé, calcule un bilan, le PnL par wallet, les événements notables et les wallets
-candidats, puis produit un rapport Markdown en français et un texte compact pour Telegram.
+liés (candidats), puis produit un rapport Markdown en français et un texte compact pour
+Telegram. Les wallets liés de confiance forte sont ajoutés automatiquement au suivi.
 
 Les rapports ne contiennent que des données : aucun conseil d'investissement, aucune
 interprétation des intentions du trader.
@@ -32,40 +37,64 @@ Aucune clé n'est écrite dans le code ni dans la config.
 export TAOSTATS_API_KEY="..."
 ```
 
-## Configuration : `config/cluster.yaml`
+## Configuration
 
-Tout le périmètre se modifie dans ce fichier, sans toucher au code.
+Tout le périmètre se modifie sans toucher au code.
 
-- `wallets.rang1`, `wallets.rang2`, `wallets.observation` : wallets attribués au trader.
-  Ensemble, ils forment « le cluster ».
-- `deposit_addresses` : adresses de dépôt exchange. Elles sont surveillées pour repérer
-  de nouveaux expéditeurs, mais ne comptent pas comme wallets du trader.
-- `infrastructure` : adresses jamais considérées comme candidates (hot wallet, collecteur
-  de frais…). `role: fee_collector` masque les micro-transferts vers cette adresse.
+### `config/settings.yaml` : réglages communs
+
+- `infrastructure` : adresses jamais considérées comme candidates, pour tous les
+  groupes (hot wallet, collecteur de frais…). `role: fee_collector` masque les
+  micro-transferts vers cette adresse.
 - `api` : rythme des appels (`min_interval_s`, 12 s par défaut pour l'offre gratuite à
   5 crédits/min), nombre de reprises, taille des pages, dossier de cache, limites pour
   l'historique des candidats.
-- `collection.start_block` : bloc de départ du tout premier passage (`null` = tout
-  l'historique, nécessaire pour un PnL complet).
+- `collection.start_block` : bloc de départ de l'historique d'une adresse nouvellement
+  suivie (`null` = tout l'historique, nécessaire pour un PnL complet).
 - `thresholds` : seuil des gros trades (5 TAO), des micro-frais (0,01 TAO), subnets
   surveillés (`[118]`), seuil « wallet vidé », paramètres de détection des changements
   de validateur.
 - `fingerprint` : bornes de l'empreinte de référence (voir plus bas).
+- `auto_add` : ajout automatique des wallets liés de confiance forte (`enabled`,
+  `max_per_run`).
 - `telegram.enabled` : `true` pour envoyer automatiquement à chaque passage.
 
-Une adresse ne peut figurer que dans une seule catégorie ; la config est validée au
-chargement.
+### `config/groups/<nom>.yaml` : un fichier par groupe
+
+- `wallets.rang1`, `wallets.rang2`, `wallets.observation` : wallets du groupe.
+- `deposit_addresses` : adresses de dépôt exchange. Elles sont surveillées pour repérer
+  de nouveaux expéditeurs, mais ne comptent pas comme wallets du groupe.
+- Facultatif : `infrastructure` (ajoutée à la liste commune), `thresholds`,
+  `fingerprint` ou `auto_add` pour redéfinir un réglage pour ce groupe seulement.
+
+Le groupe `principal` contient le cluster du trader suivi. Ces fichiers peuvent être
+édités à la main, ou gérés avec les commandes `add` et `remove`.
+
+Une adresse ne peut figurer que dans une seule catégorie d'un groupe ; la config est
+validée au chargement.
 
 ## Usage
 
 ```bash
-# Passage complet : collecte, analyse, rapport dans reports/, texte compact sur la sortie standard
+# Ajouter une adresse à un groupe ; le groupe est créé s'il n'existe pas
+python -m clusterwatch add 5Xxx... --group mon-pf
+python -m clusterwatch add 5Yyy... --group principal --rank rang2
+python -m clusterwatch add 5Zzz... --group mon-pf --rank depot   # adresse de dépôt exchange
+
+# Retirer une adresse (elle ne sera plus jamais ré-ajoutée automatiquement)
+python -m clusterwatch remove 5Yyy... --group principal
+
+# Lister les groupes, leurs adresses, les ajouts auto et les candidats forts
+python -m clusterwatch groups
+
+# Passage complet sur tous les groupes : collecte, analyse, rapports, texte compact
 python -m clusterwatch run
+python -m clusterwatch run --group mon-pf        # un seul groupe
 
 # Idem sans sauvegarder l'état ni rien envoyer (pour tester)
 python -m clusterwatch run --dry-run
 
-# Passage + envoi Telegram (seulement s'il y a quelque chose à signaler)
+# Passage + envoi Telegram (seulement pour les groupes qui ont quelque chose à signaler)
 python -m clusterwatch run --send
 
 # Affiche un échantillon brut de chaque endpoint Taostats (vérification des champs)
@@ -75,29 +104,60 @@ python -m clusterwatch probe
 python -m clusterwatch fingerprint 5Et1cWpHVPdpaiTFjvmEdw4BVt4tTmwzPJ9TUFmEJvrWH3qR
 ```
 
-Options globales : `--config chemin.yaml`, `-v` (journal détaillé).
-Options de `run` : `--state`, `--reports`, `--dry-run`, `--send`.
+Options globales : `--config-dir`, `--state-dir`, `-v` (journal détaillé).
+Options de `run` : `--group` (répétable), `--reports`, `--dry-run`, `--send`.
 
-Le **premier passage** établit la référence : valeur du cluster, cumuls de PnL, subnets
-déjà détenus, expéditeurs déjà connus vers les dépôts. Il ne détaille pas les événements
-historiques et n'envoie rien sur Telegram. Avec l'offre gratuite, il peut durer plusieurs
-dizaines de minutes.
+### Ajouter une nouvelle adresse
+
+Au passage qui suit un `add`, l'outil :
+
+1. récupère tout l'historique de l'adresse (trades, transferts, positions) ;
+2. l'intègre au PnL sans double comptage : un transfert passé entre cette adresse et
+   un wallet déjà suivi avait déjà été compté du côté de ce dernier ;
+3. ne présente pas cet historique comme de nouveaux événements, mais liste l'adresse
+   dans « Changements du périmètre suivi » ;
+4. cherche ses wallets liés dans cet historique : destinataires de ses transferts TAO
+   ou de stake, flux dans les deux sens.
+
+Ensuite, l'adresse est suivie comme les autres.
+
+### Wallets liés ajoutés automatiquement
+
+Quand un candidat atteint la confiance **forte** (au moins 15 trades et un transfert
+de stake ou des flux dans les deux sens avec le groupe), il est ajouté au suivi en
+catégorie « ajout auto ». Les règles :
+
+- au plus `auto_add.max_per_run` ajouts par passage ;
+- chaque ajout est signalé dans le rapport et sur Telegram ;
+- l'adresse est collectée à partir du passage suivant, et ses propres wallets liés sont
+  détectés à leur tour ;
+- les ajouts auto sont enregistrés dans l'état du groupe (`state/<groupe>.json`), pas
+  dans le YAML ;
+- `remove` retire un ajout auto et l'empêche de revenir ;
+- `add` le rend permanent.
+
+Le **premier passage** d'un groupe établit la référence : valeur, cumuls de PnL,
+subnets déjà détenus, expéditeurs déjà connus vers les dépôts. Il ne détaille pas les
+événements historiques et n'envoie rien sur Telegram. Avec l'offre gratuite, il peut
+durer plusieurs dizaines de minutes.
 
 ## Fichiers produits
 
-- `state/state.json` : état entre deux passages (dernier bloc, valeur précédente, cumuls
-  financé/sorti, subnets vus, expéditeurs connus, candidats). **Versionné** : le commiter
+- `state/<groupe>.json` : état du groupe entre deux passages (dernier bloc, valeur
+  précédente, cumuls financé/sorti, subnets vus, expéditeurs connus, candidats, ajouts
+  auto, adresses retirées). **Versionné** : le commiter
   après chaque passage rend l'analyse reproductible. Il est écrit de façon atomique et
   seulement si le passage réussit.
-- `reports/AAAA-MM-JJ_HHMM.md` : rapport complet du passage.
+- `reports/<groupe>/AAAA-MM-JJ_HHMM.md` : rapport complet du passage pour ce groupe.
 - `cache/` (ignoré par git) : réponses API sur des plages de blocs fermées, réutilisées si
   un passage est relancé.
 
 ## Ce que calcule un passage
 
 **Bilan**
-- Valeur du cluster : TAO libres + positions alpha valorisées en TAO.
-- Variation depuis le passage précédent.
+- Valeur du groupe : TAO libres + positions alpha valorisées en TAO.
+- Variation depuis le passage précédent (la part due aux wallets nouvellement suivis
+  est indiquée).
 - Flux de trading net (ventes − achats) et volume brassé (achats + ventes).
 - Tous les montants RAO sont divisés par 1e9.
 
@@ -124,7 +184,8 @@ dizaines de minutes.
 
 **Wallets candidats**
 - Sources : nouveaux expéditeurs vers les adresses de dépôt, destinataires de transferts
-  TAO ou de stake depuis le cluster.
+  TAO ou de stake depuis le groupe (y compris dans l'historique d'une adresse
+  nouvellement suivie).
 - L'infrastructure et les dépôts sont exclus.
 - Pour chaque candidat, l'empreinte est calculée sur son historique de trades et
   comparée à la référence :
@@ -192,6 +253,8 @@ Les tests utilisent uniquement des données fictives. Ils couvrent :
 - le PnL ;
 - le filtrage des changements de validateur ;
 - les événements et la confiance des candidats ;
+- la gestion des groupes (ajout, retrait, fusion des réglages) ;
+- l'ajout d'une adresse en cours de route et l'ajout automatique des wallets liés ;
 - le client HTTP (reprise 429, pagination, cache) ;
 - un passage complet contre une fausse API.
 
@@ -200,5 +263,5 @@ Les tests utilisent uniquement des données fictives. Ils couvrent :
 Exemple de cron toutes les heures (adapter les chemins) :
 
 ```cron
-5 * * * * cd /chemin/clusterwatch && . .venv/bin/activate && python -m clusterwatch run --send && git add state reports && git commit -qm "passage clusterwatch" 
+5 * * * * cd /chemin/clusterwatch && . .venv/bin/activate && python -m clusterwatch run --send && git add state reports config && git commit -qm "passage clusterwatch" 
 ```

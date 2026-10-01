@@ -1,4 +1,5 @@
 {
+  "auto_wallets": {},
   "candidates": {},
   "cluster_value_tao": null,
   "counterparties": {},
@@ -6,6 +7,8 @@
   "known_depositors": [],
   "last_block": null,
   "last_run": null,
+  "rejected": [],
   "seen_subnets": [],
+  "tracked_addresses": [],
   "wallet_values": {}
 }

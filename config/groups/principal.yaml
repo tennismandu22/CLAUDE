@@ -1,0 +1,23 @@
+# Groupe « principal » : cluster du trader suivi.
+# Ajouter une adresse : python -m clusterwatch add <adresse> --group principal --rank rang2
+
+wallets:
+  rang1:
+    - 5Et1cWpHVPdpaiTFjvmEdw4BVt4tTmwzPJ9TUFmEJvrWH3qR
+    - 5DkW8hSjpJNkwiNA1EXyjhnqGUAGqAgP3SXHh36szUpmea2W
+    - 5Dhq343bWqmgYMw3uAcWpjLxMyTmdF3BNouqpr4g9J4CYtBA
+    - 5G2ZUzcazJ831HzpsmdMoqV811GYXhdZmJJ7MAbrQE33iQLc
+    - 5GULjuRpF34khB67a3cb7G1kzhgpu8h6VZu6vMDod4APKbSU
+    - 5GL46po3iBatb3uyWabqy7tUeKK6Wu8HFmu4rj1z2Pmu7VbV
+  rang2:
+    - 5CfLkfxDuGibLtDZzyNApkhjptDmvKbbJvu5RZgbLiFd5vhE
+    - 5DTzNCjrVwJGRhRf1oGJWgVHEcAzkjfEgoTMqiD57HjucFLP
+    - 5HihiJi6XbPhnPBKGwHMYwNnCNjXZnvQ64VTqdY4tLvUmKAq
+    - 5GCLehX9rfmbWsZZrCsXR3bLCdwTs7DzXrLSXhq2C7HT4gCp
+  observation:
+    - 5DwEDbBakwhsWJCptbwnVzeG1Mh1VvSQPNudS97E6JJs9qxT
+
+# Adresses de dépôt exchange : tuyaux surveillés, PAS des wallets du trader.
+deposit_addresses:
+  - 5GunvcaiSh7eKEUym6PZMujByyN22kfTQ3RaWfqt52FbCfxb
+  - 5DjuLMBvT6grSwvXVshBepappmSZ8Ses9NZTYhGggcgXpZcG

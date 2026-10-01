@@ -144,3 +144,59 @@ def test_split_message():
     parts = split_message(text, limit=1000)
     assert all(len(p) <= 1000 for p in parts)
     assert "\n".join(parts) == text
+
+
+def test_new_wallet_history_and_auto_add():
+    """Une adresse ajoutée en cours de route : son historique est collecté sans
+    double comptage ni événements, ses wallets liés sont détectés, et un lien
+    de confiance forte est ajouté automatiquement au suivi."""
+    from dataclasses import replace
+
+    c = cfg()
+    c1 = replace(c, rang2=())  # au départ, seul W1 est suivi
+    fake = FakeTaostats()
+    fake.add_transfer(EXT, W1, 10, block=10)
+    fake.add_transfer(W1, W2, 4, block=30)  # W2 n'est pas encore suivi : sortie pour W1
+    fake.add_transfer(W2, CAND, 1, block=40)
+    # CAND : transfert de stake avec W2 et 16 trades → confiance forte
+    fake.add_trade(W2, "UNDELEGATE", 2, 7, block=50, is_transfer=True, transfer_address={"ss58": CAND})
+    for i in range(8):
+        fake.add_trade(CAND, "DELEGATE", 10, 1 + i, block=60 + 2 * i)
+        fake.add_trade(CAND, "UNDELEGATE", 10, 1 + i, block=61 + 2 * i)
+    fake.add_trade(W2, "DELEGATE", 8, 9, block=70)
+
+    state = State()
+    run_pass(client_for(fake), c1, state)
+    assert state.flows[W1].withdrawn_tao == 4
+    assert W2 not in state.tracked_addresses
+
+    # L'utilisateur ajoute W2 au groupe
+    fake.head = 2000
+    r = run_pass(client_for(fake), c, state)
+    assert r.new_addresses == [W2]
+    assert r.trades == [] and not r.events.big_trades  # historique non présenté comme nouveau
+    assert state.flows[W1].withdrawn_tao == 4  # pas de double comptage côté W1
+    assert state.flows[W2].funded_tao == 4 and state.flows[W2].withdrawn_tao == 1 + 2
+    assert r.events.new_subnets == []
+    assert CAND in r.auto_added and CAND in state.auto_wallets
+    assert r.has_anything
+
+    # Le wallet ajouté automatiquement est suivi au passage suivant
+    fake.head = 3000
+    c3 = c.with_auto_wallets(state.auto_wallets)
+    r3 = run_pass(client_for(fake), c3, state)
+    assert r3.new_addresses == [CAND]
+    assert CAND in r3.balance.per_wallet
+
+
+def test_rejected_wallet_is_not_auto_added():
+    c = cfg()
+    fake = FakeTaostats()
+    fake.add_trade(W1, "UNDELEGATE", 2, 7, block=50, is_transfer=True, transfer_address={"ss58": CAND})
+    for i in range(8):
+        fake.add_trade(CAND, "DELEGATE", 10, 1 + i, block=60 + 2 * i)
+        fake.add_trade(CAND, "UNDELEGATE", 10, 1 + i, block=61 + 2 * i)
+    state = State(rejected=[CAND])
+    run_pass(client_for(fake), c, state)
+    assert state.candidates[CAND]["confidence"] == "fort"
+    assert CAND not in state.auto_wallets

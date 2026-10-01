@@ -18,7 +18,7 @@ def _table(headers: list[str], rows: list[list[str]]) -> list[str]:
 
 def render_markdown(cfg: Config, r: RunResult) -> str:
     col, b, ev, sn = r.collected, r.balance, r.events, r.collected.subnets
-    L: list[str] = [f"# Rapport clusterwatch — {r.run_at:%Y-%m-%d %H:%M} UTC", ""]
+    L: list[str] = [f"# Rapport clusterwatch — groupe « {r.group} » — {r.run_at:%Y-%m-%d %H:%M} UTC", ""]
     start = "début de l'historique" if col.block_start is None else f"bloc {col.block_start}"
     L.append(f"Période analysée : {start} → bloc {col.block_end}.")
     if r.initial:
@@ -33,8 +33,7 @@ def render_markdown(cfg: Config, r: RunResult) -> str:
         ["Valeur totale", f"{num(b.value_tao)} TAO"],
         ["dont TAO libres", f"{num(b.free_tao)} TAO"],
         ["dont positions alpha", f"{num(b.staked_tao)} TAO"],
-        ["Variation depuis le passage précédent",
-         "n/d (premier passage)" if b.variation_tao is None else f"{num(b.variation_tao, signed=True)} TAO"],
+        ["Variation depuis le passage précédent", _variation(r)],
         ["Achats", f"{b.n_buys} trades, {num(b.buys_tao)} TAO"],
         ["Ventes", f"{b.n_sells} trades, {num(b.sells_tao)} TAO"],
         ["Flux de trading net (ventes − achats)", f"{num(b.net_flow_tao, signed=True)} TAO"],
@@ -69,6 +68,20 @@ def render_markdown(cfg: Config, r: RunResult) -> str:
     else:
         L += _events_sections(cfg, r)
 
+    # --- Suivi
+    if r.new_addresses or r.auto_added:
+        L += ["## Changements du périmètre suivi", ""]
+        if r.new_addresses:
+            L.append("Adresses suivies pour la première fois (historique complet collecté, "
+                     "non détaillé dans les événements) :")
+            L += [f"- `{a}` — {cfg.label(a)}, valeur {num(b.per_wallet.get(a))} TAO"
+                  if a in b.per_wallet else f"- `{a}` — {cfg.label(a)}" for a in r.new_addresses]
+            L.append("")
+        if r.auto_added:
+            L.append("Wallets ajoutés automatiquement (confiance forte), suivis à partir du prochain passage :")
+            L += [f"- `{a}`" for a in r.auto_added]
+            L.append("")
+
     # --- Candidats
     L += ["## Nouveaux wallets candidats", ""]
     if not r.candidates:
@@ -90,6 +103,16 @@ def render_markdown(cfg: Config, r: RunResult) -> str:
         L += ["", f"{r.pending_candidates} candidat(s) en attente d'évaluation au prochain passage."]
     L.append("")
     return "\n".join(L)
+
+
+def _variation(r: RunResult) -> str:
+    v = r.balance.variation_tao
+    if v is None:
+        return "n/d (premier passage)"
+    out = f"{num(v, signed=True)} TAO"
+    if r.new_wallets_value_tao:
+        out += f" (dont {num(r.new_wallets_value_tao)} TAO de wallets nouvellement suivis)"
+    return out
 
 
 def _events_sections(cfg: Config, r: RunResult) -> list[str]:
@@ -167,7 +190,7 @@ def _events_sections(cfg: Config, r: RunResult) -> list[str]:
 
 
 def write_report(cfg: Config, r: RunResult, reports_dir: Path | str = "reports") -> Path:
-    d = Path(reports_dir)
+    d = Path(reports_dir) / r.group
     d.mkdir(parents=True, exist_ok=True)
     path = d / f"{r.run_at:%Y-%m-%d_%H%M}.md"
     path.write_text(render_markdown(cfg, r), encoding="utf-8")

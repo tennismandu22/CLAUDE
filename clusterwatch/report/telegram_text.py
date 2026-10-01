@@ -20,8 +20,8 @@ def render_telegram(cfg: Config, r: RunResult) -> str:
     b, ev, sn = r.balance, r.events, r.collected.subnets
     var = "" if b.variation_tao is None else f" ({num(b.variation_tao, signed=True)})"
     L = [
-        f"clusterwatch {r.run_at:%d/%m %H:%M} UTC",
-        f"Valeur cluster : {num(b.value_tao)} TAO{var}",
+        f"clusterwatch [{r.group}] {r.run_at:%d/%m %H:%M} UTC",
+        f"Valeur du groupe : {num(b.value_tao)} TAO{var}",
         f"Net trading : {num(b.net_flow_tao, signed=True)} TAO | volume {num(b.volume_tao)} TAO",
     ]
     if r.initial:
@@ -56,6 +56,11 @@ def render_telegram(cfg: Config, r: RunResult) -> str:
         L.append(f"Mouvements {watched} : {n}")
     if ev.awakened_wallets:
         L.append("Réveil : " + ", ".join(short(w) for w in ev.awakened_wallets))
+    if r.new_addresses:
+        L.append("Nouvelles adresses suivies : " + ", ".join(short(a) for a in r.new_addresses))
+    if r.auto_added:
+        L += ["", "Ajout auto au suivi (confiance forte) :"]
+        L += [f"• {a}" for a in r.auto_added]
     if r.candidates:
         L += ["", "Candidats :"]
         L += _capped([

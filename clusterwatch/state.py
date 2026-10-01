@@ -1,4 +1,5 @@
-"""État persistant entre deux passages (state/state.json, versionné dans le dépôt)."""
+"""État persistant entre deux passages : un fichier par groupe, state/<groupe>.json,
+versionné dans le dépôt."""
 
 from __future__ import annotations
 
@@ -8,7 +9,11 @@ import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-DEFAULT_STATE_PATH = Path("state/state.json")
+DEFAULT_STATE_DIR = Path("state")
+
+
+def state_path(group: str, state_dir: Path | str = DEFAULT_STATE_DIR) -> Path:
+    return Path(state_dir) / f"{group}.json"
 
 
 @dataclass
@@ -40,6 +45,13 @@ class State:
     known_depositors: list[str] = field(default_factory=list)
     counterparties: dict[str, Counterparty] = field(default_factory=dict)
     candidates: dict[str, dict] = field(default_factory=dict)
+    # Adresses (wallets + dépôts) déjà collectées : une adresse absente est « nouvelle »
+    # et son historique est récupéré en entier au passage suivant.
+    tracked_addresses: list[str] = field(default_factory=list)
+    # Wallets ajoutés automatiquement : adresse -> {"added_block", "reasons"}.
+    auto_wallets: dict[str, dict] = field(default_factory=dict)
+    # Adresses retirées à la main : jamais ré-ajoutées automatiquement.
+    rejected: list[str] = field(default_factory=list)
 
     @property
     def is_initial(self) -> bool:
@@ -55,6 +67,8 @@ class State:
         d = asdict(self)
         d["seen_subnets"] = sorted(set(self.seen_subnets))
         d["known_depositors"] = sorted(set(self.known_depositors))
+        d["tracked_addresses"] = sorted(set(self.tracked_addresses))
+        d["rejected"] = sorted(set(self.rejected))
         return d
 
     @classmethod
@@ -69,10 +83,13 @@ class State:
             known_depositors=list(d.get("known_depositors") or []),
             counterparties={k: Counterparty(**v) for k, v in (d.get("counterparties") or {}).items()},
             candidates=dict(d.get("candidates") or {}),
+            tracked_addresses=list(d.get("tracked_addresses") or []),
+            auto_wallets=dict(d.get("auto_wallets") or {}),
+            rejected=list(d.get("rejected") or []),
         )
 
 
-def load_state(path: Path | str = DEFAULT_STATE_PATH) -> State:
+def load_state(path: Path | str) -> State:
     path = Path(path)
     if not path.exists():
         return State()
@@ -80,7 +97,7 @@ def load_state(path: Path | str = DEFAULT_STATE_PATH) -> State:
         return State.from_dict(json.load(fh))
 
 
-def save_state(state: State, path: Path | str = DEFAULT_STATE_PATH) -> None:
+def save_state(state: State, path: Path | str) -> None:
     """Écriture atomique : fichier temporaire puis renommage."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -24,6 +24,8 @@ class Collected:
     deposit_transfers: list[Transfer] = field(default_factory=list)  # vers les adresses de dépôt
     snapshots: list[WalletSnapshot] = field(default_factory=list)
     subnets: dict[int, dict] = field(default_factory=dict)
+    # Adresses collectées pour la première fois (historique complet récupéré).
+    new_addresses: set[str] = field(default_factory=set)
 
 
 def _transfer_key(t: Transfer) -> tuple:
@@ -49,12 +51,17 @@ def block_start_for(cfg: Config, state: State) -> int | None:
 
 
 def collect(client: TaostatsClient, cfg: Config, state: State) -> Collected:
+    """Collecte depuis le dernier bloc analysé. Une adresse jamais collectée
+    (ajoutée depuis le dernier passage) est relue depuis `start_block`."""
     head = ep.head_block(client)
-    start = block_start_for(cfg, state)
-    out = Collected(block_start=start, block_end=head)
-    if start is not None and start > head:
-        log.info("aucun nouveau bloc depuis le dernier passage")
-        start = head + 1
+    group_start = block_start_for(cfg, state)
+    out = Collected(block_start=group_start, block_end=head)
+    tracked = set(state.tracked_addresses)
+    if not state.is_initial:
+        out.new_addresses = {a for a in cfg.cluster + cfg.deposit_addresses if a not in tracked}
+
+    def start_for(address: str) -> int | None:
+        return cfg.start_block if address in out.new_addresses else group_start
 
     log.info("subnets : prix et noms")
     out.subnets = ep.fetch_subnets(client)
@@ -62,7 +69,8 @@ def collect(client: TaostatsClient, cfg: Config, state: State) -> Collected:
     transfers: list[Transfer] = []
     stakes: list[StakeTransfer] = []
     for i, wallet in enumerate(cfg.cluster, 1):
-        log.info("[%d/%d] %s", i, len(cfg.cluster), wallet)
+        start = start_for(wallet)
+        log.info("[%d/%d] %s%s", i, len(cfg.cluster), wallet, " (nouvelle adresse)" if wallet in out.new_addresses else "")
         if start is None or start <= head:
             for ev in ep.fetch_delegations(client, wallet, start, head):
                 if isinstance(ev, StakeTransfer):
@@ -80,8 +88,9 @@ def collect(client: TaostatsClient, cfg: Config, state: State) -> Collected:
             WalletSnapshot(address=wallet, free_tao=ep.fetch_free_balance(client, wallet), positions=positions)
         )
 
-    if start is None or start <= head:
-        for dep in cfg.deposit_addresses:
+    for dep in cfg.deposit_addresses:
+        start = start_for(dep)
+        if start is None or start <= head:
             log.info("dépôt %s", dep)
             out.deposit_transfers += ep.fetch_transfers(client, start, head, to=dep)
 

@@ -1,13 +1,21 @@
-"""Chargement et validation de config/cluster.yaml."""
+"""Chargement et validation de la configuration.
+
+- config/settings.yaml      : réglages communs (API, seuils, empreinte, infrastructure, Telegram)
+- config/groups/<nom>.yaml  : un fichier par groupe suivi (wallets, adresses de dépôt,
+                              infrastructure et seuils propres au groupe)
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import yaml
 
-DEFAULT_CONFIG_PATH = Path("config/cluster.yaml")
+DEFAULT_CONFIG_DIR = Path("config")
+SETTINGS_FILE = "settings.yaml"
+GROUPS_DIR = "groups"
+RANKS = ("rang1", "rang2", "observation")
 
 
 class ConfigError(ValueError):
@@ -62,7 +70,17 @@ class FingerprintRef:
 
 
 @dataclass(frozen=True)
+class AutoAdd:
+    """Ajout automatique au suivi des wallets liés de confiance « forte »."""
+
+    enabled: bool = True
+    max_per_run: int = 3
+
+
+@dataclass(frozen=True)
 class Config:
+    """Configuration d'UN groupe, fusionnée avec les réglages communs."""
+
     rang1: tuple[str, ...]
     rang2: tuple[str, ...]
     observation: tuple[str, ...]
@@ -73,11 +91,19 @@ class Config:
     thresholds: Thresholds = field(default_factory=Thresholds)
     fingerprint: FingerprintRef = field(default_factory=FingerprintRef)
     telegram_enabled: bool = False
+    auto_add: AutoAdd = field(default_factory=AutoAdd)
+    name: str = "principal"
+    # Wallets ajoutés automatiquement (stockés dans l'état du groupe, pas dans le YAML).
+    auto_wallets: tuple[str, ...] = ()
 
     @property
     def cluster(self) -> tuple[str, ...]:
-        """Tous les wallets attribués au trader (rangs 1, 2 et observation)."""
-        return self.rang1 + self.rang2 + self.observation
+        """Tous les wallets suivis du groupe (rangs 1, 2, observation et ajouts auto)."""
+        manual = self.rang1 + self.rang2 + self.observation
+        return manual + tuple(a for a in self.auto_wallets if a not in manual)
+
+    def with_auto_wallets(self, addresses) -> "Config":
+        return replace(self, auto_wallets=tuple(addresses))
 
     def rank_of(self, address: str) -> str | None:
         if address in self.rang1:
@@ -86,6 +112,8 @@ class Config:
             return "rang 2"
         if address in self.observation:
             return "observation"
+        if address in self.auto_wallets:
+            return "ajout auto"
         return None
 
     @property
@@ -131,12 +159,16 @@ def _pair(value, typ=float) -> tuple:
     return t
 
 
+def is_valid_address(addr: str) -> bool:
+    return isinstance(addr, str) and addr.startswith("5") and 46 <= len(addr) <= 48 and addr.isalnum()
+
+
 def _validate_address(addr: str) -> None:
-    if not (addr.startswith("5") and 46 <= len(addr) <= 48):
+    if not is_valid_address(addr):
         raise ConfigError(f"adresse SS58 invalide : {addr!r}")
 
 
-def parse_config(raw: dict) -> Config:
+def parse_config(raw: dict, name: str = "principal", auto_wallets=(), require_wallets: bool = True) -> Config:
     wallets = raw.get("wallets") or {}
     rang1 = _tuple(wallets.get("rang1"))
     rang2 = _tuple(wallets.get("rang2"))
@@ -153,8 +185,8 @@ def parse_config(raw: dict) -> Config:
     dupes = {a for a in all_addrs if all_addrs.count(a) > 1}
     if dupes:
         raise ConfigError(f"adresse(s) présente(s) dans plusieurs catégories : {sorted(dupes)}")
-    if not rang1 + rang2 + observation:
-        raise ConfigError("aucun wallet suivi dans la config")
+    if require_wallets and not rang1 + rang2 + observation:
+        raise ConfigError(f"groupe {name!r} : aucun wallet suivi")
 
     a = raw.get("api") or {}
     api = ApiConfig(
@@ -205,6 +237,7 @@ def parse_config(raw: dict) -> Config:
     )
 
     start_block = (raw.get("collection") or {}).get("start_block")
+    aa = raw.get("auto_add") or {}
     return Config(
         rang1=rang1,
         rang2=rang2,
@@ -216,12 +249,59 @@ def parse_config(raw: dict) -> Config:
         thresholds=thresholds,
         fingerprint=fingerprint,
         telegram_enabled=bool((raw.get("telegram") or {}).get("enabled", False)),
+        auto_add=AutoAdd(
+            enabled=bool(aa.get("enabled", AutoAdd.enabled)),
+            max_per_run=int(aa.get("max_per_run", AutoAdd.max_per_run)),
+        ),
+        name=name,
+        auto_wallets=tuple(auto_wallets),
     )
 
 
-def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> Config:
-    path = Path(path)
-    if not path.exists():
-        raise ConfigError(f"fichier de config introuvable : {path}")
+def _read_yaml(path: Path) -> dict:
     with path.open(encoding="utf-8") as fh:
-        return parse_config(yaml.safe_load(fh) or {})
+        data = yaml.safe_load(fh) or {}
+    if not isinstance(data, dict):
+        raise ConfigError(f"{path} : contenu YAML inattendu")
+    return data
+
+
+def merge_settings(settings: dict, group: dict) -> dict:
+    """Fusionne réglages communs et fichier de groupe (le groupe l'emporte)."""
+    merged = dict(settings)
+    for key, value in group.items():
+        if key == "infrastructure":
+            merged[key] = list(settings.get(key) or []) + list(value or [])
+        elif key in ("thresholds", "fingerprint", "api", "auto_add") and isinstance(value, dict):
+            merged[key] = {**(settings.get(key) or {}), **value}
+        else:
+            merged[key] = value
+    return merged
+
+
+def groups_dir(config_dir: Path | str = DEFAULT_CONFIG_DIR) -> Path:
+    return Path(config_dir) / GROUPS_DIR
+
+
+def list_groups(config_dir: Path | str = DEFAULT_CONFIG_DIR) -> list[str]:
+    d = groups_dir(config_dir)
+    return sorted(p.stem for p in d.glob("*.yaml")) if d.exists() else []
+
+
+def load_settings(config_dir: Path | str = DEFAULT_CONFIG_DIR) -> dict:
+    path = Path(config_dir) / SETTINGS_FILE
+    if not path.exists():
+        raise ConfigError(f"fichier de réglages introuvable : {path}")
+    return _read_yaml(path)
+
+
+def load_group(name: str, config_dir: Path | str = DEFAULT_CONFIG_DIR, auto_wallets=()) -> Config:
+    path = groups_dir(config_dir) / f"{name}.yaml"
+    if not path.exists():
+        raise ConfigError(f"groupe inconnu : {name!r} (fichier {path} absent)")
+    return parse_config(merge_settings(load_settings(config_dir), _read_yaml(path)), name, auto_wallets)
+
+
+def settings_config(config_dir: Path | str = DEFAULT_CONFIG_DIR) -> Config:
+    """Réglages communs seuls (pour probe / fingerprint), sans groupe."""
+    return parse_config(load_settings(config_dir), name="(réglages)", require_wallets=False)
