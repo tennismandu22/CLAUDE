@@ -13,6 +13,8 @@ Telegram. Les wallets liés de confiance forte sont ajoutés automatiquement au 
 Les rapports ne contiennent que des données : aucun conseil d'investissement, aucune
 interprétation des intentions du trader.
 
+> **Débutant ?** Suis le guide pas à pas : [GUIDE_DEBUTANT.md](GUIDE_DEBUTANT.md).
+
 ## Installation
 
 Python 3.10 ou plus récent.
@@ -31,10 +33,12 @@ pip install -e ".[dev]"
 | `TELEGRAM_BOT_TOKEN` | token du bot Telegram | pour Telegram |
 | `TELEGRAM_CHAT_ID` | identifiant de ton chat (plusieurs possibles, séparés par des virgules) | pour Telegram |
 
-Aucune clé n'est écrite dans le code ni dans la config.
+Aucune clé n'est écrite dans le code ni dans la config. Le plus simple est de copier
+`.env.example` en `.env` et d'y mettre les valeurs. Ce fichier est lu automatiquement
+et ignoré par git. Les variables déjà définies dans le terminal restent prioritaires.
 
 ```bash
-export TAOSTATS_API_KEY="..."
+cp .env.example .env    # puis éditer .env
 ```
 
 ## Configuration
