@@ -26,6 +26,7 @@ POOL_LATEST = "/api/dtao/pool/latest/v1"
 SUBNET_IDENTITY = "/api/subnet/identity/v1"
 
 ORDER_ASC = "block_number_asc"
+ORDER_DESC = "block_number_desc"
 
 # Unité du champ `slippage` renvoyé par l'API : "fraction" (0.001 = 0,1 %) ou "percent".
 SLIPPAGE_UNIT = "fraction"
@@ -117,8 +118,8 @@ def head_block(client: TaostatsClient) -> int:
     return int(payload["data"][0]["block_number"])
 
 
-def _range(block_start: int | None, block_end: int | None) -> dict:
-    return {"block_start": block_start, "block_end": block_end, "order": ORDER_ASC}
+def _range(block_start: int | None, block_end: int | None, order: str = ORDER_ASC) -> dict:
+    return {"block_start": block_start, "block_end": block_end, "order": order}
 
 
 def fetch_delegations(
@@ -127,8 +128,9 @@ def fetch_delegations(
     block_start: int | None,
     block_end: int | None,
     max_pages: int | None = None,
+    order: str = ORDER_ASC,
 ) -> list[Trade | StakeTransfer]:
-    params = {"nominator": nominator, **_range(block_start, block_end)}
+    params = {"nominator": nominator, **_range(block_start, block_end, order)}
     return [
         parse_delegation(i)
         for i in client.paginate(DELEGATION, params, cacheable=block_end is not None, max_pages=max_pages)
@@ -141,9 +143,14 @@ def fetch_transfers(
     block_end: int | None,
     address: str | None = None,
     to: str | None = None,
+    max_pages: int | None = None,
+    order: str = ORDER_ASC,
 ) -> list[Transfer]:
-    params = {"address": address, "to": to, **_range(block_start, block_end)}
-    return [parse_transfer(i) for i in client.paginate(TRANSFER, params, cacheable=block_end is not None)]
+    params = {"address": address, "to": to, **_range(block_start, block_end, order)}
+    return [
+        parse_transfer(i)
+        for i in client.paginate(TRANSFER, params, cacheable=block_end is not None, max_pages=max_pages)
+    ]
 
 
 def fetch_positions(client: TaostatsClient, coldkey: str) -> list[Position]:

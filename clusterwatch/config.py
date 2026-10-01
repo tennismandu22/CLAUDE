@@ -78,6 +78,19 @@ class AutoAdd:
 
 
 @dataclass(frozen=True)
+class LinksConfig:
+    """Recherche des adresses liées à une adresse donnée (`links`, `/liens`)."""
+
+    max_counterparties: int = 10
+    max_shared_senders: int = 5
+    seed_pages: int = 5
+    history_pages: int = 2
+    active_days: int = 30
+    active_min_tao: float = 0.1
+    hub_counterparties: int = 50
+
+
+@dataclass(frozen=True)
 class Config:
     """Configuration d'UN groupe, fusionnée avec les réglages communs."""
 
@@ -93,6 +106,7 @@ class Config:
     telegram_enabled: bool = False
     telegram_run_every_minutes: int = 60
     auto_add: AutoAdd = field(default_factory=AutoAdd)
+    links: LinksConfig = field(default_factory=LinksConfig)
     name: str = "principal"
     # Wallets ajoutés automatiquement (stockés dans l'état du groupe, pas dans le YAML).
     auto_wallets: tuple[str, ...] = ()
@@ -255,6 +269,10 @@ def parse_config(raw: dict, name: str = "principal", auto_wallets=(), require_wa
             enabled=bool(aa.get("enabled", AutoAdd.enabled)),
             max_per_run=int(aa.get("max_per_run", AutoAdd.max_per_run)),
         ),
+        links=LinksConfig(**{
+            k: type(getattr(LinksConfig, k))(v) for k, v in (raw.get("links") or {}).items()
+            if hasattr(LinksConfig, k)
+        }),
         name=name,
         auto_wallets=tuple(auto_wallets),
     )
@@ -274,7 +292,7 @@ def merge_settings(settings: dict, group: dict) -> dict:
     for key, value in group.items():
         if key == "infrastructure":
             merged[key] = list(settings.get(key) or []) + list(value or [])
-        elif key in ("thresholds", "fingerprint", "api", "auto_add") and isinstance(value, dict):
+        elif key in ("thresholds", "fingerprint", "api", "auto_add", "links") and isinstance(value, dict):
             merged[key] = {**(settings.get(key) or {}), **value}
         else:
             merged[key] = value

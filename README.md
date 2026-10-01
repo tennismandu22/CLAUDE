@@ -101,6 +101,10 @@ python -m clusterwatch run --send
 # Infos sur une adresse quelconque, sans la suivre
 python -m clusterwatch info 5Xxx...
 
+# Adresses actives liées à une adresse (voir « Trouver les adresses liées »)
+python -m clusterwatch links 5Xxx...
+python -m clusterwatch links 5Xxx... --all     # inclut les liens « possible »
+
 # Bot Telegram (voir la section dédiée)
 python -m clusterwatch bot
 
@@ -148,6 +152,60 @@ subnets déjà détenus, expéditeurs déjà connus vers les dépôts. Il ne dé
 événements historiques et n'envoie rien sur Telegram. Avec l'offre gratuite, il peut
 durer plusieurs dizaines de minutes.
 
+## Trouver les adresses liées à une adresse
+
+`python -m clusterwatch links <adresse>` (ou `/liens <adresse>` sur Telegram) explore
+les liens on-chain de l'adresse et liste les adresses **actives** qui lui sont
+probablement liées. Pour chacune, il donne le niveau de certitude et les preuves
+trouvées.
+
+**Méthode**
+
+1. Lecture de l'historique de l'adresse de départ : transferts TAO, transferts de
+   stake, trades (pour son empreinte).
+2. Examen détaillé des contreparties principales : solde, positions, trades récents,
+   premier financeur, nombre de contreparties.
+3. Classement de chaque contrepartie :
+   - **hub** (exchange, service, trop de contreparties) : ignoré ;
+   - **adresse de dépôt exchange** : ne trade pas et reverse presque tout vers une
+     seule adresse. Les adresses de dépôt déjà connues dans tes groupes comptent aussi.
+     Les **autres expéditeurs** vers ce dépôt sont alors examinés : une adresse de
+     dépôt appartient à un seul compte exchange ;
+   - **wallet** : évalué.
+4. Chaque wallet reçoit des points selon les indices trouvés :
+
+| Indice | Type | Points |
+|---|---|---|
+| Transfert de stake avec l'adresse de départ | fort | 3 |
+| Flux TAO dans les deux sens | fort | 3 |
+| Même adresse de dépôt exchange | fort | 3 |
+| Tout premier financement reçu de l'adresse de départ (ou l'inverse) | fort | 2 |
+| Transferts à sens unique | appui | 0,5–1 |
+| Empreinte de trading très proche de celle de l'adresse de départ (≥ 15 trades des deux côtés) | appui | 1–2 |
+
+**Niveaux**
+
+- **très probable** : au moins **deux indices forts indépendants** et 5 points ou plus ;
+- **probable** : un indice fort et 4 points ou plus ;
+- **possible** : 2 points ou plus. Masqué par défaut, affiché avec `--all` ou
+  `/liens <adresse> tout`.
+
+Une ressemblance d'empreinte seule ne dépasse jamais « possible ». Les adresses liées
+mais inactives (pas de trade depuis `active_days` jours et valeur sous `active_min_tao`)
+sont écartées et seulement comptées.
+
+Une attribution on-chain reste une **probabilité**, jamais une certitude absolue : un
+transfert peut venir d'un proche, d'un OTC ou d'un service. Les preuves sont listées
+pour que tu puisses juger.
+
+**Durée.** Les bornes de la section `links` de `config/settings.yaml` limitent le
+nombre d'appels. Avec l'offre gratuite, une recherche prend au plus ~25 min, souvent
+bien moins, et le bot annonce la durée maximale au lancement.
+
+Pour suivre ensuite une adresse trouvée : `add` / `/add`. Les passages réguliers
+continuent la détection et ajoutent automatiquement les liens de confiance forte (voir
+plus haut).
+
 ## Bot Telegram : rapports et commandes à distance
 
 Le bot fait deux choses :
@@ -161,6 +219,7 @@ Le bot fait deux choses :
 |---|---|
 | une adresse seule (`5Xxx…`) | infos sur l'adresse : valeur, positions, trades des 7 derniers jours, empreinte |
 | `/info <adresse>` | idem |
+| `/liens <adresse> [tout]` | adresses actives liées à cette adresse, avec niveau de certitude et preuves |
 | `/add <adresse> <groupe> [rang]` | suit l'adresse (groupe créé s'il n'existe pas), lance le passage et envoie le rapport |
 | `/remove <adresse> <groupe>` | arrête de suivre l'adresse |
 | `/groupes` | liste des groupes et des adresses suivies |
@@ -313,6 +372,7 @@ Les tests utilisent uniquement des données fictives. Ils couvrent :
 - la gestion des groupes (ajout, retrait, fusion des réglages) ;
 - l'ajout d'une adresse en cours de route et l'ajout automatique des wallets liés ;
 - le bot Telegram (chats autorisés, commandes, passages planifiés) ;
+- la recherche d'adresses liées (indices, niveaux, détection des dépôts exchange) ;
 - le client HTTP (reprise 429, pagination, cache) ;
 - un passage complet contre une fausse API.
 

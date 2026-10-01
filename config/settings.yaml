@@ -76,6 +76,19 @@ auto_add:
   enabled: true
   max_per_run: 3
 
+# Recherche des adresses liées à une adresse (`links <adresse>`, `/liens` sur Telegram).
+# Bornes choisies pour rester raisonnable avec l'offre Taostats gratuite :
+# chaque adresse examinée coûte ~5 appels (~1 min à 12 s par appel) ; avec ces valeurs,
+# une recherche dure au plus ~25 min (souvent bien moins).
+links:
+  max_counterparties: 10   # contreparties directes examinées en détail
+  max_shared_senders: 5    # autres expéditeurs examinés par adresse de dépôt détectée
+  seed_pages: 5            # pages d'historique lues pour l'adresse de départ
+  history_pages: 2         # pages d'historique (trades récents) par adresse examinée
+  active_days: 30          # « active » = trade récent dans ce délai…
+  active_min_tao: 0.1      # … ou valeur actuelle au moins égale à ce seuil
+  hub_counterparties: 50   # au-delà, l'adresse est un hub (exchange, service) et ignorée
+
 telegram:
   # true : `run` envoie le rapport sur Telegram sans avoir besoin de --send.
   enabled: false

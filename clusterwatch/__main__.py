@@ -1,4 +1,4 @@
-"""CLI : python -m clusterwatch {run,add,remove,groups,info,bot,probe,fingerprint}."""
+"""CLI : python -m clusterwatch {run,add,remove,groups,info,links,bot,probe,fingerprint}."""
 
 from __future__ import annotations
 
@@ -73,6 +73,16 @@ def cmd_groups(args) -> int:
 def cmd_info(args) -> int:
     ws = workspace(args)
     print(service.address_info(ws, make_client(settings_config(args.config_dir)), args.address))
+    return 0
+
+
+def cmd_links(args) -> int:
+    ws = workspace(args)
+    cfg = settings_config(args.config_dir)
+    log.info("recherche des adresses liées (au plus ~%d min avec les réglages actuels)",
+             service.links_estimate_minutes(cfg))
+    result = service.find_links(ws, make_client(cfg), args.address)
+    print(service.render_links(ws, result, show_all=args.all))
     return 0
 
 
@@ -162,6 +172,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("info", help="instantané d'une adresse quelconque (solde, positions, trades, empreinte)")
     p.add_argument("address")
     p.set_defaults(func=cmd_info)
+
+    p = sub.add_parser("links", help="adresses actives liées à une adresse, avec niveau de certitude")
+    p.add_argument("address")
+    p.add_argument("--all", action="store_true", help="affiche aussi les liens « possible »")
+    p.set_defaults(func=cmd_links)
 
     p = sub.add_parser("bot", help="démarre le bot Telegram (commandes à distance + passages planifiés)")
     p.add_argument("--reports", default="reports")

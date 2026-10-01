@@ -21,6 +21,7 @@ HELP = """Commandes clusterwatch :
 
 <adresse>  infos sur une adresse (solde, positions, trades récents, empreinte)
 /info <adresse>  idem
+/liens <adresse> [tout]  adresses actives liées, avec niveau de certitude
 /add <adresse> <groupe> [rang]  suivre une adresse ; le groupe est créé s'il n'existe pas
     rang : rang1 (défaut), rang2, observation, depot
 /remove <adresse> <groupe>  ne plus suivre une adresse
@@ -83,6 +84,7 @@ class Bot:
             handler = {
                 "/start": self.cmd_help, "/aide": self.cmd_help, "/help": self.cmd_help,
                 "/info": self.cmd_info,
+                "/liens": self.cmd_links, "/links": self.cmd_links,
                 "/add": self.cmd_add, "/ajouter": self.cmd_add,
                 "/remove": self.cmd_remove, "/retirer": self.cmd_remove,
                 "/groupes": self.cmd_groups, "/groups": self.cmd_groups,
@@ -107,7 +109,23 @@ class Bot:
             return
         self.reply(chat_id, "Recherche en cours…")
         info = service.address_info(self.ws, self.client, args[0])
-        self.reply(chat_id, info + f"\n\nPour la suivre : /add {args[0]} <groupe>")
+        self.reply(chat_id, info + f"\n\nPour la suivre : /add {args[0]} <groupe>"
+                            f"\nPour ses adresses liées : /liens {args[0]}")
+
+    def cmd_links(self, chat_id: str, args: list[str]) -> None:
+        if not args or len(args) > 2 or not is_valid_address(args[0]):
+            self.reply(chat_id, "Usage : /liens <adresse> [tout]")
+            return
+        cfg = settings_config(self.ws.config_dir)
+        self.reply(chat_id, f"Recherche des adresses liées en cours (au plus ~"
+                            f"{service.links_estimate_minutes(cfg)} min avec l'offre actuelle)…")
+        result = service.find_links(self.ws, self.client, args[0])
+        show_all = len(args) == 2 and args[1].lower() in ("tout", "all")
+        text = service.render_links(self.ws, result, show_all=show_all)
+        candidates = [l.address for l in result.links if l.active and l.level in ("très probable", "probable")]
+        if candidates:
+            text += "\n\nPour suivre l'adresse et ses liens : /add <adresse> <groupe>"
+        self.reply(chat_id, text)
 
     def cmd_add(self, chat_id: str, args: list[str]) -> None:
         if len(args) not in (2, 3) or not is_valid_address(args[0]):

@@ -61,6 +61,8 @@ class Fingerprint:
     n_trades: int
     criteria: list[Criterion] = field(default_factory=list)
     hours: list[int] = field(default_factory=lambda: [0] * 24)
+    # Mesures brutes (None = non mesurable), pour comparer deux empreintes entre elles.
+    metrics: dict[str, float | None] = field(default_factory=dict)
 
     @property
     def core(self) -> list[Criterion]:
@@ -159,6 +161,15 @@ def compute_fingerprint(address: str, trades: list[Trade], ref: FingerprintRef) 
     else:
         fp.criteria.append(Criterion("hours", "Heures UTC", "n/d", "", None))
 
+    fp.metrics = {
+        "imbalance_pct": imbalance,
+        "clip_median_tao": clip,
+        "slippage_median_pct": s_med,
+        "slippage_p90_pct": s_p90,
+        "subnets": float(n_subnets) if trades else None,
+        "holding_median_days": hold,
+    }
+
     # 7. Validateur (informatif uniquement, jamais éliminatoire)
     ref_tao = sum(t.tao for t in buys if _uses_reference_validator(t, ref))
     share = ref_tao / buy_tao * 100 if buy_tao > 0 else None
@@ -170,3 +181,42 @@ def compute_fingerprint(address: str, trades: list[Trade], ref: FingerprintRef) 
         informative=True,
     ))
     return fp
+
+
+def _ratio_close(a: float, b: float, factor: float) -> bool:
+    if a <= 0 or b <= 0:
+        return a == b
+    return max(a, b) / min(a, b) <= factor
+
+
+def _hour_similarity(a: list[int], b: list[int]) -> float | None:
+    """Similarité cosinus des profils horaires (0 à 1)."""
+    na = sum(x * x for x in a) ** 0.5
+    nb = sum(x * x for x in b) ** 0.5
+    if na == 0 or nb == 0:
+        return None
+    return sum(x * y for x, y in zip(a, b)) / (na * nb)
+
+
+def similarity(a: Fingerprint, b: Fingerprint) -> tuple[int, int]:
+    """Compare deux empreintes mesure par mesure. Retourne (concordantes, comparables)."""
+    ma, mb = a.metrics, b.metrics
+    checks = []
+
+    def both(key):
+        return ma.get(key) is not None and mb.get(key) is not None
+
+    if both("imbalance_pct"):
+        checks.append(abs(ma["imbalance_pct"] - mb["imbalance_pct"]) <= 5)
+    if both("clip_median_tao"):
+        checks.append(_ratio_close(ma["clip_median_tao"], mb["clip_median_tao"], 2.0))
+    if both("slippage_median_pct"):
+        checks.append(_ratio_close(ma["slippage_median_pct"], mb["slippage_median_pct"], 1.6))
+    if both("subnets"):
+        checks.append(_ratio_close(ma["subnets"], mb["subnets"], 2.0))
+    if both("holding_median_days"):
+        checks.append(_ratio_close(ma["holding_median_days"], mb["holding_median_days"], 2.5))
+    hours = _hour_similarity(a.hours, b.hours)
+    if hours is not None:
+        checks.append(hours >= 0.8)
+    return sum(checks), len(checks)
