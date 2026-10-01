@@ -26,6 +26,14 @@ def render_telegram(cfg: Config, r: RunResult) -> str:
     ]
     if r.initial:
         L.append("Premier passage : référence établie.")
+        L += ["", "Wallets (valeur / PnL) :"]
+        L += _capped([f"• {short(p.wallet)} {num(p.value_tao)} TAO / {num(p.pnl_tao, signed=True)}"
+                      for p in sorted(r.pnls, key=lambda p: p.value_tao, reverse=True)])
+        if r.auto_added:
+            L += ["", "Ajout auto au suivi (confiance forte) :"] + [f"• {a}" for a in r.auto_added]
+        if r.candidates:
+            L += ["", "Wallets liés détectés :"]
+            L += _capped([f"• {c.address} {c.confidence}" for c in r.candidates])
         return "\n".join(L)
 
     big = num(cfg.thresholds.big_trade_tao, 0)

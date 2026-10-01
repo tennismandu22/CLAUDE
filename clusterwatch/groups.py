@@ -91,7 +91,7 @@ def add_address(
         state.auto_wallets.pop(address, None)
         state.rejected = [a for a in state.rejected if a != address]
     verb = "créé avec" if created else "mis à jour :"
-    return f"groupe {name!r} {verb} {address} ({rank}). Son historique sera collecté au prochain passage."
+    return f"groupe {name!r} {verb} {address} ({rank})."
 
 
 def remove_address(name: str, address: str, config_dir=DEFAULT_CONFIG_DIR, state: State | None = None) -> str:

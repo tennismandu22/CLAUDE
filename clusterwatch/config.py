@@ -91,6 +91,7 @@ class Config:
     thresholds: Thresholds = field(default_factory=Thresholds)
     fingerprint: FingerprintRef = field(default_factory=FingerprintRef)
     telegram_enabled: bool = False
+    telegram_run_every_minutes: int = 60
     auto_add: AutoAdd = field(default_factory=AutoAdd)
     name: str = "principal"
     # Wallets ajoutés automatiquement (stockés dans l'état du groupe, pas dans le YAML).
@@ -249,6 +250,7 @@ def parse_config(raw: dict, name: str = "principal", auto_wallets=(), require_wa
         thresholds=thresholds,
         fingerprint=fingerprint,
         telegram_enabled=bool((raw.get("telegram") or {}).get("enabled", False)),
+        telegram_run_every_minutes=int((raw.get("telegram") or {}).get("run_every_minutes", 60)),
         auto_add=AutoAdd(
             enabled=bool(aa.get("enabled", AutoAdd.enabled)),
             max_per_run=int(aa.get("max_per_run", AutoAdd.max_per_run)),

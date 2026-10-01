@@ -77,4 +77,9 @@ auto_add:
   max_per_run: 3
 
 telegram:
+  # true : `run` envoie le rapport sur Telegram sans avoir besoin de --send.
   enabled: false
+  # Intervalle des passages automatiques lancés par le bot (`clusterwatch bot`).
+  # 0 = pas de passage automatique. Avec l'offre gratuite, un passage complet
+  # prend plusieurs minutes : ne pas descendre sous 30.
+  run_every_minutes: 60

@@ -1,4 +1,4 @@
-"""CLI : python -m clusterwatch {run,add,remove,groups,probe,fingerprint}."""
+"""CLI : python -m clusterwatch {run,add,remove,groups,info,bot,probe,fingerprint}."""
 
 from __future__ import annotations
 
@@ -7,124 +7,83 @@ import json
 import logging
 import sys
 
-from .config import DEFAULT_CONFIG_DIR, RANKS, ConfigError, list_groups, load_group, settings_config, short
-from .state import DEFAULT_STATE_DIR, load_state, save_state, state_path
-from .taostats.cache import DiskCache
-from .taostats.client import TaostatsClient, TaostatsError
+from . import service
+from .config import DEFAULT_CONFIG_DIR, RANKS, ConfigError, list_groups, load_group, settings_config
+from .notify.telegram import TelegramError
+from .service import make_client
+from .state import DEFAULT_STATE_DIR
+from .taostats.client import TaostatsError
 
 log = logging.getLogger("clusterwatch")
 
 
-def make_client(cfg) -> TaostatsClient:
-    return TaostatsClient(
-        base_url=cfg.api.base_url,
-        min_interval_s=cfg.api.min_interval_s,
-        max_retries=cfg.api.max_retries,
-        page_limit=cfg.api.page_limit,
-        cache=DiskCache(cfg.api.cache_dir),
-    )
-
-
-def run_group(args, name: str, client: TaostatsClient | None) -> tuple[int, TaostatsClient]:
-    from .pipeline import run_pass
-    from .report.markdown import write_report
-    from .report.telegram_text import render_telegram
-
-    spath = state_path(name, args.state_dir)
-    state = load_state(spath)
-    cfg = load_group(name, args.config_dir, auto_wallets=state.auto_wallets.keys())
-    client = client or make_client(cfg)
-    log.info("=== groupe %s : %d wallets suivis ===", name, len(cfg.cluster))
-    result = run_pass(client, cfg, state)
-    path = write_report(cfg, result, args.reports)
-    text = render_telegram(cfg, result)
-    log.info("rapport écrit : %s", path)
-
-    if args.dry_run:
-        log.info("--dry-run : état non sauvegardé")
-    else:
-        save_state(state, spath)
-
-    print(text + "\n")
-    if not result.has_anything:
-        log.info("groupe %s : rien à signaler", name)
-    elif args.send or cfg.telegram_enabled:
-        if args.dry_run:
-            log.info("--dry-run : pas d'envoi Telegram")
-        else:
-            from .notify.telegram import TelegramError, send_text
-
-            try:
-                n = send_text(text)
-                log.info("rapport envoyé sur Telegram (%d message(s))", n)
-            except TelegramError as exc:
-                log.error("%s", exc)
-                return 1, client
-    return 0, client
+def workspace(args) -> service.Workspace:
+    return service.Workspace(args.config_dir, args.state_dir, getattr(args, "reports", "reports"))
 
 
 def cmd_run(args) -> int:
+    ws = workspace(args)
     groups = args.group or list_groups(args.config_dir)
     if not groups:
         raise ConfigError("aucun groupe : créez-en un avec `python -m clusterwatch add <adresse> --group <nom>`")
-    status, client = 0, None
+    client = make_client(settings_config(args.config_dir))
+    status = 0
     for name in groups:
         try:
-            code, client = run_group(args, name, client)
-            status = max(status, code)
+            run = service.run_group(ws, name, client, dry_run=args.dry_run)
         except (ConfigError, TaostatsError) as exc:
             log.error("groupe %s : %s", name, exc)
             status = 1
-    if client:
-        log.info("%d appels API, %d réponses depuis le cache", client.calls, client.cache_hits)
+            continue
+        print(run.text + "\n")
+        if not run.has_anything:
+            log.info("groupe %s : rien à signaler", name)
+        elif args.send or load_group(name, args.config_dir).telegram_enabled:
+            if args.dry_run:
+                log.info("--dry-run : pas d'envoi Telegram")
+                continue
+            from .notify.telegram import TelegramError, send_text
+
+            try:
+                n = send_text(run.text)
+                log.info("rapport envoyé sur Telegram (%d message(s))", n)
+            except TelegramError as exc:
+                log.error("%s", exc)
+                status = 1
+    log.info("%d appels API, %d réponses depuis le cache", client.calls, client.cache_hits)
     return status
 
 
 def cmd_add(args) -> int:
-    from .groups import add_address
-
-    spath = state_path(args.group, args.state_dir)
-    state = load_state(spath)
-    print(add_address(args.group, args.address, args.rank, args.config_dir, state))
-    load_group(args.group, args.config_dir, auto_wallets=state.auto_wallets.keys())  # validation
-    if spath.exists():
-        save_state(state, spath)
+    print(service.add(workspace(args), args.group, args.address, args.rank))
+    print("Son historique sera collecté au prochain passage (`python -m clusterwatch run`).")
     return 0
 
 
 def cmd_remove(args) -> int:
-    from .groups import remove_address
-
-    spath = state_path(args.group, args.state_dir)
-    state = load_state(spath)
-    print(remove_address(args.group, args.address, args.config_dir, state))
-    save_state(state, spath)
+    print(service.remove(workspace(args), args.group, args.address))
     return 0
 
 
 def cmd_groups(args) -> int:
-    names = list_groups(args.config_dir)
-    if not names:
-        print("Aucun groupe. Créez-en un : python -m clusterwatch add <adresse> --group <nom>")
-        return 0
-    for name in names:
-        state = load_state(state_path(name, args.state_dir))
-        cfg = load_group(name, args.config_dir, auto_wallets=state.auto_wallets.keys())
-        last = state.last_run or "jamais"
-        value = "n/d" if state.cluster_value_tao is None else f"{state.cluster_value_tao:.2f} TAO"
-        print(f"\n[{name}] dernier passage : {last} — valeur : {value}")
-        for rank in RANKS:
-            for a in getattr(cfg, rank):
-                print(f"  {rank:<12} {a}")
-        for a in cfg.auto_wallets:
-            print(f"  {'ajout auto':<12} {a}")
-        for a in cfg.deposit_addresses:
-            print(f"  {'dépôt':<12} {a}")
-        strong = [a for a, e in state.candidates.items() if e.get("confidence") == "fort" and a not in cfg.cluster]
-        if strong:
-            print("  candidats forts non suivis : " + ", ".join(short(a) for a in strong))
-        if state.rejected:
-            print("  retirés (jamais ré-ajoutés) : " + ", ".join(short(a) for a in state.rejected))
+    print(service.groups_summary(workspace(args)))
+    return 0
+
+
+def cmd_info(args) -> int:
+    ws = workspace(args)
+    print(service.address_info(ws, make_client(settings_config(args.config_dir)), args.address))
+    return 0
+
+
+def cmd_bot(args) -> int:
+    from .bot import show_chat_ids, start_bot
+    from .notify.telegram import TelegramApi
+
+    if args.show_chat_id:
+        show_chat_ids(TelegramApi())
+    else:
+        start_bot(workspace(args))
     return 0
 
 
@@ -200,6 +159,16 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("groups", help="liste les groupes et leurs adresses suivies")
     p.set_defaults(func=cmd_groups)
 
+    p = sub.add_parser("info", help="instantané d'une adresse quelconque (solde, positions, trades, empreinte)")
+    p.add_argument("address")
+    p.set_defaults(func=cmd_info)
+
+    p = sub.add_parser("bot", help="démarre le bot Telegram (commandes à distance + passages planifiés)")
+    p.add_argument("--reports", default="reports")
+    p.add_argument("--show-chat-id", action="store_true",
+                   help="affiche l'identifiant des chats qui écrivent au bot (configuration)")
+    p.set_defaults(func=cmd_bot)
+
     p = sub.add_parser("probe", help="affiche un échantillon brut de chaque endpoint Taostats")
     p.add_argument("--address", help="adresse utilisée pour les requêtes (défaut : 1er wallet du 1er groupe)")
     p.set_defaults(func=cmd_probe)
@@ -220,9 +189,11 @@ def main(argv: list[str] | None = None) -> int:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     try:
         return args.func(args)
-    except (ConfigError, TaostatsError) as exc:
+    except (ConfigError, TaostatsError, TelegramError) as exc:
         log.error("%s", exc)
         return 2
+    except KeyboardInterrupt:
+        return 130
 
 
 if __name__ == "__main__":

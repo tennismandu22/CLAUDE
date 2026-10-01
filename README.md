@@ -28,8 +28,8 @@ pip install -e ".[dev]"
 | Variable | Rôle | Obligatoire |
 |---|---|---|
 | `TAOSTATS_API_KEY` | clé de l'API Taostats (https://taostats.io/pro) | oui |
-| `TELEGRAM_BOT_TOKEN` | token du bot Telegram | seulement pour l'envoi |
-| `TELEGRAM_CHAT_ID` | identifiant du chat destinataire | seulement pour l'envoi |
+| `TELEGRAM_BOT_TOKEN` | token du bot Telegram | pour Telegram |
+| `TELEGRAM_CHAT_ID` | identifiant de ton chat (plusieurs possibles, séparés par des virgules) | pour Telegram |
 
 Aucune clé n'est écrite dans le code ni dans la config.
 
@@ -57,7 +57,8 @@ Tout le périmètre se modifie sans toucher au code.
 - `fingerprint` : bornes de l'empreinte de référence (voir plus bas).
 - `auto_add` : ajout automatique des wallets liés de confiance forte (`enabled`,
   `max_per_run`).
-- `telegram.enabled` : `true` pour envoyer automatiquement à chaque passage.
+- `telegram.enabled` : `true` pour que `run` envoie le rapport sans `--send`.
+- `telegram.run_every_minutes` : intervalle des passages automatiques du bot.
 
 ### `config/groups/<nom>.yaml` : un fichier par groupe
 
@@ -96,6 +97,12 @@ python -m clusterwatch run --dry-run
 
 # Passage + envoi Telegram (seulement pour les groupes qui ont quelque chose à signaler)
 python -m clusterwatch run --send
+
+# Infos sur une adresse quelconque, sans la suivre
+python -m clusterwatch info 5Xxx...
+
+# Bot Telegram (voir la section dédiée)
+python -m clusterwatch bot
 
 # Affiche un échantillon brut de chaque endpoint Taostats (vérification des champs)
 python -m clusterwatch probe
@@ -140,6 +147,56 @@ Le **premier passage** d'un groupe établit la référence : valeur, cumuls de P
 subnets déjà détenus, expéditeurs déjà connus vers les dépôts. Il ne détaille pas les
 événements historiques et n'envoie rien sur Telegram. Avec l'offre gratuite, il peut
 durer plusieurs dizaines de minutes.
+
+## Bot Telegram : rapports et commandes à distance
+
+Le bot fait deux choses :
+
+- il lance un passage sur tous les groupes à intervalle régulier
+  (`telegram.run_every_minutes`, 60 min par défaut) et t'envoie le rapport compact de
+  chaque groupe qui a quelque chose de nouveau ;
+- il répond à tes messages, depuis ton téléphone :
+
+| Message | Effet |
+|---|---|
+| une adresse seule (`5Xxx…`) | infos sur l'adresse : valeur, positions, trades des 7 derniers jours, empreinte |
+| `/info <adresse>` | idem |
+| `/add <adresse> <groupe> [rang]` | suit l'adresse (groupe créé s'il n'existe pas), lance le passage et envoie le rapport |
+| `/remove <adresse> <groupe>` | arrête de suivre l'adresse |
+| `/groupes` | liste des groupes et des adresses suivies |
+| `/run [groupe]` | lance un passage maintenant |
+| `/aide` | liste des commandes |
+
+Le bot ne répond qu'aux chats listés dans `TELEGRAM_CHAT_ID` et ignore tous les autres.
+Avec l'offre Taostats gratuite (12 s entre deux appels), une réponse peut prendre de
+quelques secondes à plusieurs minutes. Un `/add` sur une adresse très active est le cas
+le plus long, car tout son historique est récupéré.
+
+### Mise en place (une seule fois)
+
+1. Sur Telegram, ouvre une conversation avec **@BotFather**, envoie `/newbot` et
+   choisis un nom. BotFather te donne un **token** (`123456:ABC…`).
+2. Sur ta machine :
+   ```bash
+   export TELEGRAM_BOT_TOKEN="123456:ABC..."
+   python -m clusterwatch bot --show-chat-id
+   ```
+   Envoie un message à ton bot. Il te répond avec ton **chat_id**, qui s'affiche aussi
+   dans le terminal. Arrête ensuite avec Ctrl+C.
+3. Démarre le bot :
+   ```bash
+   export TAOSTATS_API_KEY="..."
+   export TELEGRAM_BOT_TOKEN="123456:ABC..."
+   export TELEGRAM_CHAT_ID="ton_chat_id"
+   python -m clusterwatch bot
+   ```
+
+Le bot doit **tourner en permanence** pour répondre et faire les passages planifiés.
+Il faut donc une machine allumée : ton ordinateur, un Raspberry Pi ou un petit serveur
+(VPS). Si la machine s'éteint, les messages envoyés entre-temps sont traités au
+redémarrage.
+
+Le token et le chat_id ne sont jamais écrits dans le code ni dans la config.
 
 ## Fichiers produits
 
@@ -255,6 +312,7 @@ Les tests utilisent uniquement des données fictives. Ils couvrent :
 - les événements et la confiance des candidats ;
 - la gestion des groupes (ajout, retrait, fusion des réglages) ;
 - l'ajout d'une adresse en cours de route et l'ajout automatique des wallets liés ;
+- le bot Telegram (chats autorisés, commandes, passages planifiés) ;
 - le client HTTP (reprise 429, pagination, cache) ;
 - un passage complet contre une fausse API.
 
